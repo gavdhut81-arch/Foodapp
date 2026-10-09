@@ -1,9 +1,9 @@
 import React, { useState } from "react";
 import "./App.css";
 
-// Backend (Flask) ka address. Port 5000 hona chahiye.
-const API_URL = "http://127.0.0.1:5000/predict";
-
+const API_URL =
+  (process.env.REACT_APP_API_URL || "http://localhost:5000") +
+  "/api/analyze-food";
 function App() {
   const [page, setPage] = useState("login");
   const [user, setUser] = useState(null);
