@@ -31,24 +31,25 @@ app.post('/api/analyze-food', upload.single('image'), async (req, res) => {
     };
 
     // Updated model to gemini-2.5-flash
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        const model = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      generationConfig: { responseMimeType: 'application/json' },
+    });
 
-    const prompt = `Analyze this food image accurately. Return ONLY a valid JSON object without any backticks, markdown, or commentary in this exact format:
-    {"foodName": "Food Name Here", "category": "Category Here"}`;
+    const prompt = `Analyze this food image accurately. Return ONLY a valid JSON object in exactly this format:
+{"name": "Food name", "category": "Category", "confidence": 90, "calories": "250 kcal", "protein": "8 g", "carbs": "40 g", "fat": "6 g", "serving_note": "Approximate values for one serving", "health_tip": "One short healthy tip", "low_confidence": false}
+confidence must be a number from 0 to 100. If the image is not food, set name to "Not food" and low_confidence to true.`;
 
     const result = await model.generateContent([prompt, imagePart]);
     const responseText = result.response.text();
-    
-    // Log response in terminal to debug exact AI output
     console.log("Raw Gemini AI Output:", responseText);
 
-    // Clean JSON String
     const cleanJson = responseText
       .replace(/```json/gi, '')
       .replace(/```/g, '')
       .trim();
 
-    const foodData = JSON.parse(cleanJson);
+    const foodData = JSON.parse(cleanJson);(cleanJson);
     res.json(foodData);
 
   } catch (error) {
