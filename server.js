@@ -11,7 +11,7 @@ app.use(cors());
 app.use(express.json());
 
 const upload = multer({ storage: multer.memoryStorage() });
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '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');
 
 app.get('/', (req, res) => {
   res.send('Backend Server is Running!');
