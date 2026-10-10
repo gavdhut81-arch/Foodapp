@@ -67,3 +67,32 @@ app.post("/api/analyze-food", upload.single("image"), async (req, res) => {
   const filePath = req.file?.path;
   try {
     if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+    const imageData = fs.readFileSync(filePath).toString("base64");
+
+    const result = await withRetry(() =>
+      model.generateContent([
+        PROMPT,
+        { inlineData: { mimeType: req.file.mimetype, data: imageData } },
+      ])
+    );
+
+    const text = result.response.text();
+    let data;
+    try {
+      data = JSON.parse(text.replace(/```json|```/g, "").trim());
+    } catch {
+      return res.status(502).json({ error: "AI returned an invalid response" });
+    }
+    res.json(data);
+  } catch (err) {
+    console.error("analyze-food error:", err);
+    if (isBusy(err)) {
+      return res.status(503).json({ error: "AI is busy right now, please try again" });
+    }
+    res.status(500).json({ error: "Analysis failed" });
+  } finally {
+    if (filePath) fs.unlink(filePath, () => {});
+  }
+});
+
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
