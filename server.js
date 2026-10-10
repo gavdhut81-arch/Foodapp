@@ -1,127 +1,156 @@
-require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
-const multer = require("multer");
-const fs = require("fs");
-const path = require("path");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+import React, { useState, useEffect } from "react";
+import "./App.css";
+import { analyzeFood } from "./apicall";
 
-const app = express();
-const PORT = process.env.PORT || 5000;
+// ---------- tiny browser-only auth (demo) ----------
+const USERS_KEY = "fuddy_users";
+const SESSION_KEY = "fuddy_session";
 
-// ---------- Setup ----------
-app.use(cors());
-app.use(express.json());
-
-const uploadDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
-
-const upload = multer({
-  dest: uploadDir,
-  limits: { fileSize: 8 * 1024 * 1024 }, // 8 MB
-});
-
-if (!process.env.GEMINI_API_KEY) {
-  console.error("GEMINI_API_KEY is missing in environment variables!");
+async function sha256(text) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const readUsers = () => {
+  try { return JSON.parse(localStorage.getItem(USERS_KEY)) || {}; } catch { return {}; }
+};
+const writeUsers = (u) => {
+  try { localStorage.setItem(USERS_KEY, JSON.stringify(u)); } catch {}
+};
 
-// Models are tried in this order. If one is busy (503) or missing (404),
-// the next one is used. Override with GEMINI_MODELS="a,b,c" on Render.
-const MODELS = (
-  process.env.GEMINI_MODELS ||
-  "gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3.1-flash-lite"
-)
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+// ---------- Login / Register ----------
+function Auth({ onLogin }) {
+  const [mode, setMode] = useState("login");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [error, setError] = useState("");
 
-const getModel = (name) =>
-  genAI.getGenerativeModel({
-    model: name,
-    generationConfig: { responseMimeType: "application/json" },
-  });
+  const submit = async (e) => {
+    e.preventDefault();
+    setError("");
+    const key = email.trim().toLowerCase();
+    if (!key || !password) return setError("Please fill all fields.");
+    const users = readUsers();
+    const hash = await sha256(password);
 
-const PROMPT = `Analyze this food image. Respond ONLY with JSON in this exact shape:
-{
-  "food": "name of the dish",
-  "confidence": 0-100,
-  "calories": number (kcal per typical serving),
-  "protein": number (grams),
-  "carbs": number (grams),
-  "fat": number (grams),
-  "serving": "serving size assumed, e.g. 1 piece"
-}
-If the image is not food, set "food" to "Not a food item" and all numbers to 0.`;
-
-// ---------- Helpers ----------
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-const isBusy = (err) =>
-  err?.status === 503 ||
-  err?.status === 429 ||
-  /503|429|overloaded|high demand|unavailable/i.test(err?.message || "");
-
-const isNotFound = (err) =>
-  err?.status === 404 || /404|not found|no longer available/i.test(err?.message || "");
-
-async function generateWithFallback(parts) {
-  let lastErr;
-  for (const name of MODELS) {
-    for (let i = 0; i < 2; i++) {
-      try {
-        const result = await getModel(name).generateContent(parts);
-        console.log(`Analyzed with model: ${name}`);
-        return result;
-      } catch (err) {
-        lastErr = err;
-        if (isNotFound(err)) break; // try next model
-        if (!isBusy(err)) throw err; // real error (bad key etc.)
-        await sleep(1500 * (i + 1));
-      }
+    if (mode === "register") {
+      if (!name.trim()) return setError("Please enter your name.");
+      if (users[key]) return setError("This email is already registered.");
+      users[key] = { name: name.trim(), hash };
+      writeUsers(users);
+      onLogin({ name: name.trim(), email: key });
+    } else {
+      const u = users[key];
+      if (!u || u.hash !== hash) return setError("Wrong email or password.");
+      onLogin({ name: u.name, email: key });
     }
-    console.warn(`Model ${name} unavailable, trying next...`);
-  }
-  throw lastErr;
+  };
+
+  return (
+    <div
+      className="auth-container"
+      style={{ flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px" }}
+    >
+      <h1 className="auth-title" style={{ color: "white", fontSize: 48, margin: "0 0 20px", textAlign: "center" }}>
+        🍽️ FoodApp
+      </h1>
+      <div className="auth-card" style={{ margin: "0 auto", width: "100%" }}>
+        <div className="auth-icon">{mode === "login" ? "🔐" : "📝"}</div>
+        <h2>{mode === "login" ? "Welcome Back" : "Create Account"}</h2>
+        <p className="auth-subtitle">
+          {mode === "login" ? "Login to continue" : "Register to get started"}
+        </p>
+
+        <form onSubmit={submit}>
+          {mode === "register" && (
+            <>
+              <label>Name</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" />
+            </>
+          )}
+          <label>Email</label>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+
+          <label>Password</label>
+          <div className="pw-wrap">
+            <input
+              type={showPw ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+            />
+            <button
+              type="button"
+              className="pw-toggle"
+              onClick={() => setShowPw(!showPw)}
+              aria-label={showPw ? "Hide password" : "Show password"}
+              title={showPw ? "Hide password" : "Show password"}
+            >
+              {showPw ? "🙈" : "👁️"}
+            </button>
+          </div>
+
+          {error && <p className="error-msg">⚠️ {error}</p>}
+
+          <button className="primary-btn" type="submit">
+            {mode === "login" ? "Login" : "Register"}
+          </button>
+        </form>
+
+        <p className="switch-text">
+          {mode === "login" ? "New here?" : "Already have an account?"}
+          <span onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}>
+            {mode === "login" ? "Register" : "Login"}
+          </span>
+        </p>
+      </div>
+    </div>
+  );
 }
 
-// ---------- Routes ----------
-app.get("/health", (req, res) => res.json({ ok: true }));
+// ---------- Dashboard ----------
+function Dashboard({ user, onLogout }) {
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
 
-app.post("/api/analyze-food", upload.single("image"), async (req, res) => {
-  const filePath = req.file?.path;
-  try {
-    if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+  const onSelect = (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    setFile(f);
+    setPreview(URL.createObjectURL(f));
+    setResult(null);
+    setError("");
+  };
 
-    const imageData = fs.readFileSync(filePath).toString("base64");
-
-    const result = await generateWithFallback([
-      PROMPT,
-      { inlineData: { mimeType: req.file.mimetype, data: imageData } },
-    ]);
-
-    const text = result.response.text();
-    let data;
+  const onAnalyze = async () => {
+    if (!file) return setError("Please select an image first.");
+    setLoading(true);
+    setError("");
+    setResult(null);
     try {
-      data = JSON.parse(text.replace(/```json|```/g, "").trim());
-    } catch {
-      return res.status(502).json({ error: "AI returned an invalid response" });
+      setResult(await analyzeFood(file));
+    } catch (e) {
+      setError(e.message || "Something went wrong");
+    } finally {
+      setLoading(false);
     }
-    res.json(data);
-  } catch (err) {
-    console.error("analyze-food error:", err);
-    if (isBusy(err) || isNotFound(err)) {
-      return res.status(503).json({ error: "AI is busy right now, please try again in a minute" });
-    }
-    res.status(500).json({ error: "Analysis failed" });
-  } finally {
-    if (filePath) fs.unlink(filePath, () => {});
-  }
-});
+  };
 
-// ---------- Serve React build ----------
-const buildPath = path.join(__dirname, "build");
-app.use(express.static(buildPath));
-app.use((req, res) => res.sendFile(path.join(buildPath, "index.html")));
+  return (
+    <div className="dashboard">
+      <nav className="navbar">
+        <div className="logo">🍽️<span>FoodApp</span></div>
+        <div className="nav-right">
+          <span className="user-name">👤 {user.name}</span>
+          <button className="logout-btn" onClick={onLogout}>Logout</button>
+        </div>
+      </nav>
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+      <main className="main-content">
+        <section className="hero">
+          <div>
+            <h1>Analyze Your
