@@ -25,10 +25,22 @@ if (!process.env.GEMINI_API_KEY) {
   console.error("GEMINI_API_KEY is missing in environment variables!");
 }
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const model = genAI.getGenerativeModel({
-  model: process.env.GEMINI_MODEL || "gemini-3.8-flash",
-  generationConfig: { responseMimeType: "application/json" },
-});
+
+// Models are tried in this order. If one is busy (503) or missing (404),
+// the next one is used. Override with GEMINI_MODELS="a,b,c" on Render.
+const MODELS = (
+  process.env.GEMINI_MODELS ||
+  "gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3.1-flash-lite"
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const getModel = (name) =>
+  genAI.getGenerativeModel({
+    model: name,
+    generationConfig: { responseMimeType: "application/json" },
+  });
 
 const PROMPT = `Analyze this food image. Respond ONLY with JSON in this exact shape:
 {
@@ -43,20 +55,34 @@ const PROMPT = `Analyze this food image. Respond ONLY with JSON in this exact sh
 If the image is not food, set "food" to "Not a food item" and all numbers to 0.`;
 
 // ---------- Helpers ----------
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 const isBusy = (err) =>
   err?.status === 503 ||
   err?.status === 429 ||
   /503|429|overloaded|high demand|unavailable/i.test(err?.message || "");
 
-async function withRetry(fn, tries = 3) {
-  for (let i = 0; i < tries; i++) {
-    try {
-      return await fn();
-    } catch (err) {
-      if (!isBusy(err) || i === tries - 1) throw err;
-      await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+const isNotFound = (err) =>
+  err?.status === 404 || /404|not found|no longer available/i.test(err?.message || "");
+
+async function generateWithFallback(parts) {
+  let lastErr;
+  for (const name of MODELS) {
+    for (let i = 0; i < 2; i++) {
+      try {
+        const result = await getModel(name).generateContent(parts);
+        console.log(`Analyzed with model: ${name}`);
+        return result;
+      } catch (err) {
+        lastErr = err;
+        if (isNotFound(err)) break; // try next model
+        if (!isBusy(err)) throw err; // real error (bad key etc.)
+        await sleep(1500 * (i + 1));
+      }
     }
+    console.warn(`Model ${name} unavailable, trying next...`);
   }
+  throw lastErr;
 }
 
 // ---------- Routes ----------
@@ -66,14 +92,13 @@ app.post("/api/analyze-food", upload.single("image"), async (req, res) => {
   const filePath = req.file?.path;
   try {
     if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+
     const imageData = fs.readFileSync(filePath).toString("base64");
 
-    const result = await withRetry(() =>
-      model.generateContent([
-        PROMPT,
-        { inlineData: { mimeType: req.file.mimetype, data: imageData } },
-      ])
-    );
+    const result = await generateWithFallback([
+      PROMPT,
+      { inlineData: { mimeType: req.file.mimetype, data: imageData } },
+    ]);
 
     const text = result.response.text();
     let data;
@@ -85,15 +110,14 @@ app.post("/api/analyze-food", upload.single("image"), async (req, res) => {
     res.json(data);
   } catch (err) {
     console.error("analyze-food error:", err);
-    if (isBusy(err)) {
-      return res.status(503).json({ error: "AI is busy right now, please try again" });
+    if (isBusy(err) || isNotFound(err)) {
+      return res.status(503).json({ error: "AI is busy right now, please try again in a minute" });
     }
     res.status(500).json({ error: "Analysis failed" });
   } finally {
     if (filePath) fs.unlink(filePath, () => {});
   }
 });
-
 
 // ---------- Serve React build ----------
 const buildPath = path.join(__dirname, "build");
