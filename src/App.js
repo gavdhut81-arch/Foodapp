@@ -125,7 +125,7 @@ function Dashboard({ user, onLogout }) {
   return (
     <div className="dashboard">
       <nav className="navbar">
-        <div className="logo">🍽️<span>Fuddy</span></div>
+        <div className="logo">🍽️<span>FOOD APP</span></div>
         <div className="nav-right">
           <span className="user-name">👤 {user.name}</span>
           <button className="logout-btn" onClick={onLogout}>Logout</button>
