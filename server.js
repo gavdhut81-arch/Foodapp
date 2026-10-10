@@ -60,7 +60,6 @@ async function withRetry(fn, tries = 3) {
 }
 
 // ---------- Routes ----------
-app.get("/", (req, res) => res.send("Fuddy backend running"));
 app.get("/health", (req, res) => res.json({ ok: true }));
 
 app.post("/api/analyze-food", upload.single("image"), async (req, res) => {
@@ -94,5 +93,11 @@ app.post("/api/analyze-food", upload.single("image"), async (req, res) => {
     if (filePath) fs.unlink(filePath, () => {});
   }
 });
+
+
+// ---------- Serve React build ----------
+const buildPath = path.join(__dirname, "build");
+app.use(express.static(buildPath));
+app.use((req, res) => res.sendFile(path.join(buildPath, "index.html")));
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

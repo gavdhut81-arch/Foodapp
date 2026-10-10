@@ -1,4 +1,4 @@
-const API = (process.env.REACT_APP_API_URL || "http://localhost:5000").replace(/\/$/, "");
+const API = (process.env.REACT_APP_API_URL || "").replace(/\/$/, "");
 
 export async function analyzeFood(file) {
   const controller = new AbortController();
