@@ -52,7 +52,7 @@ function Auth({ onLogin }) {
       style={{ flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px" }}
     >
       <h1 style={{ color: "white", fontSize: 48, margin: "0 0 20px", textAlign: "center" }}>
-        🍽️ Foodapp
+        🍽️ FoodApp
       </h1>
       <div className="auth-card" style={{ margin: "0 auto", width: "100%" }}>
         <div className="auth-icon">{mode === "login" ? "🔐" : "📝"}</div>
