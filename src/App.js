@@ -47,8 +47,14 @@ function Auth({ onLogin }) {
   };
 
   return (
-    <div className="auth-container">
-      <div className="auth-card" style={{ margin: "auto", width: "100%" }}>
+    <div
+      className="auth-container"
+      style={{ flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px" }}
+    >
+      <h1 style={{ color: "white", fontSize: 48, margin: "0 0 20px", textAlign: "center" }}>
+        🍽️ Foodapp
+      </h1>
+      <div className="auth-card" style={{ margin: "0 auto", width: "100%" }}>
         <div className="auth-icon">{mode === "login" ? "🔐" : "📝"}</div>
         <h2>{mode === "login" ? "Welcome Back" : "Create Account"}</h2>
         <p className="auth-subtitle">
