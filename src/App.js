@@ -48,22 +48,7 @@ function Auth({ onLogin }) {
 
   return (
     <div className="auth-container">
-      <div className="auth-left">
-        <div className="brand">🍽️</div>
-        <h1>Fuddy</h1>
-        <h2>AI Food Analyzer</h2>
-        <p>
-          Upload a photo of your meal and get the food name, calories, protein,
-          carbs and fat in seconds, powered by AI.
-        </p>
-        <div className="feature-list">
-          <div>📸 Upload any food photo</div>
-          <div>🤖 Instant AI analysis</div>
-          <div>🔥 Calories &amp; nutrition details</div>
-        </div>
-      </div>
-
-      <div className="auth-card">
+      <div className="auth-card" style={{ margin: "auto", width: "100%" }}>
         <div className="auth-icon">{mode === "login" ? "🔐" : "📝"}</div>
         <h2>{mode === "login" ? "Welcome Back" : "Create Account"}</h2>
         <p className="auth-subtitle">
