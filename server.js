@@ -1,99 +1,62 @@
-require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
-const multer = require("multer");
-const fs = require("fs");
-const path = require("path");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const multer = require('multer');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ---------- Setup ----------
-app.use(cors()); // later: cors({ origin: "https://your-frontend.onrender.com" })
+app.use(cors());
 app.use(express.json());
 
-const uploadDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+const upload = multer({ storage: multer.memoryStorage() });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
-const upload = multer({
-  dest: uploadDir,
-  limits: { fileSize: 8 * 1024 * 1024 }, // 8 MB
+app.get('/', (req, res) => {
+  res.send('Backend Server is Running!');
 });
 
-if (!process.env.GEMINI_API_KEY) {
-  console.error("GEMINI_API_KEY is missing in environment variables!");
-}
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const model = genAI.getGenerativeModel({
-  model: "gemini-2.5-flash",
-  generationConfig: { responseMimeType: "application/json" },
-});
-
-const PROMPT = `Analyze this food image. Respond ONLY with JSON in this exact shape:
-{
-  "food": "name of the dish",
-  "confidence": 0-100,
-  "calories": number (kcal per typical serving),
-  "protein": number (grams),
-  "carbs": number (grams),
-  "fat": number (grams),
-  "serving": "serving size assumed, e.g. 1 piece"
-}
-If the image is not food, set "food" to "Not a food item" and all numbers to 0.`;
-
-// ---------- Helpers ----------
-const isBusy = (err) =>
-  err?.status === 503 ||
-  err?.status === 429 ||
-  /503|429|overloaded|high demand|unavailable/i.test(err?.message || "");
-
-async function withRetry(fn, tries = 3) {
-  for (let i = 0; i < tries; i++) {
-    try {
-      return await fn();
-    } catch (err) {
-      if (!isBusy(err) || i === tries - 1) throw err;
-      await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
-    }
-  }
-}
-
-// ---------- Routes ----------
-app.get("/", (req, res) => res.send("Fuddy backend running"));
-app.get("/health", (req, res) => res.json({ ok: true }));
-
-app.post("/api/analyze-food", upload.single("image"), async (req, res) => {
-  const filePath = req.file?.path;
+app.post('/api/analyze-food', upload.single('image'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: "No image uploaded" });
-
-    const imageData = fs.readFileSync(filePath).toString("base64");
-
-    const result = await withRetry(() =>
-      model.generateContent([
-        PROMPT,
-        { inlineData: { mimeType: req.file.mimetype, data: imageData } },
-      ])
-    );
-
-    const text = result.response.text();
-    let data;
-    try {
-      data = JSON.parse(text.replace(/```json|```/g, "").trim());
-    } catch {
-      return res.status(502).json({ error: "AI returned an invalid response" });
+    if (!req.file) {
+      return res.status(400).json({ error: 'Please upload an image.' });
     }
-    res.json(data);
-  } catch (err) {
-    console.error("analyze-food error:", err);
-    if (isBusy(err)) {
-      return res.status(503).json({ error: "AI is busy right now, please try again" });
-    }
-    res.status(500).json({ error: "Analysis failed" });
-  } finally {
-    if (filePath) fs.unlink(filePath, () => {}); // clean up uploaded file
+
+    const imagePart = {
+      inlineData: {
+        data: req.file.buffer.toString('base64'),
+        mimeType: req.file.mimetype,
+      },
+    };
+
+    // Updated model to gemini-2.5-flash
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+    const prompt = `Analyze this food image accurately. Return ONLY a valid JSON object without any backticks, markdown, or commentary in this exact format:
+    {"foodName": "Food Name Here", "category": "Category Here"}`;
+
+    const result = await model.generateContent([prompt, imagePart]);
+    const responseText = result.response.text();
+    
+    // Log response in terminal to debug exact AI output
+    console.log("Raw Gemini AI Output:", responseText);
+
+    // Clean JSON String
+    const cleanJson = responseText
+      .replace(/```json/gi, '')
+      .replace(/```/g, '')
+      .trim();
+
+    const foodData = JSON.parse(cleanJson);
+    res.json(foodData);
+
+  } catch (error) {
+    console.error('Error analyzing image:', error);
+    res.status(500).json({ error: 'Failed to analyze food image.', details: error.message });
   }
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
+});
